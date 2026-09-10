@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Registro de pegadoras</title>
+<style>
+  /* Diseñado para uso en planta: pantalla de celular, posiblemente con
+     guantes, con luz variable. Los objetivos táctiles no bajan de 56px y el
+     contraste es alto a propósito. Nada decorativo. */
+  :root {
+    --tinta:      #16191d;
+    --tinta-sec:  #5b6169;
+    --linea:      #c9ced6;
+    --fondo:      #f2f4f7;
+    --superficie: #ffffff;
+    --accion:     #1857c4;
+    --ok:         #0f7a3d;
+    --alerta:     #b3261e;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    background: var(--fondo);
+    color: var(--tinta);
+    font: 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding-bottom: 96px;
+  }
+  header {
+    background: var(--tinta);
+    color: #fff;
+    padding: 14px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  header span { font-size: 14px; color: #a8b0ba; font-variant-numeric: tabular-nums; }
+
+  main { padding: 18px; max-width: 560px; margin: 0 auto; }
+
+  .campo { margin-bottom: 18px; }
+  label {
+    display: block;
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .pista { font-weight: 400; color: var(--tinta-sec); }
+
+  input, select, textarea {
+    width: 100%;
+    min-height: 56px;
+    padding: 12px 14px;
+    font-size: 17px;
+    font-family: inherit;
+    color: var(--tinta);
+    background: var(--superficie);
+    border: 1.5px solid var(--linea);
+    border-radius: 8px;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: 3px solid rgba(24,87,196,.35);
+    outline-offset: 1px;
+    border-color: var(--accion);
+  }
+  textarea { min-height: 80px; resize: vertical; }
+
+  /* El número del contador es el dato crítico: se muestra grande y tabular
+     para que un error de digitación se note antes de guardar. */
+  #lectura {
+    font-size: 30px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+    min-height: 68px;
+  }
+
+  .resuelto {
+    margin-top: 6px;
+    font-size: 15px;
+    color: var(--tinta-sec);
+    min-height: 22px;
+  }
+  .resuelto strong { color: var(--tinta); font-weight: 600; }
+
+  .maquinas { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .maquinas button {
+    min-height: 56px;
+    font: inherit; font-weight: 600;
+    background: var(--superficie);
+    border: 1.5px solid var(--linea);
+    border-radius: 8px;
+    color: var(--tinta);
+  }
+  .maquinas button[aria-pressed="true"] {
+    background: var(--accion);
+    border-color: var(--accion);
+    color: #fff;
+  }
+
+  #guardar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    width: 100%; min-height: 68px;
+    font: 600 19px/1 inherit;
+    color: #fff; background: var(--accion);
+    border: none;
+    box-shadow: 0 -1px 0 var(--linea);
+  }
+  #guardar:disabled { background: #8b93a0; }
+
+  #aviso {
+    padding: 14px 16px;
+    border-radius: 8px;
+    margin-bottom: 18px;
+    font-size: 16px;
+    display: none;
+  }
+  #aviso.ok    { display: block; background: #e6f4ec; color: var(--ok);     border-left: 4px solid var(--ok); }
+  #aviso.error { display: block; background: #fdeceb; color: var(--alerta); border-left: 4px solid var(--alerta); }
+
+  h2 { font-size: 16px; margin: 28px 0 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; background: var(--superficie); border-radius: 8px; overflow: hidden; }
+  th { text-align: left; font-size: 13px; color: var(--tinta-sec); font-weight: 600; padding: 8px 10px; border-bottom: 1.5px solid var(--linea); }
+  td { padding: 9px 10px; border-bottom: 1px solid #e6e9ee; font-variant-numeric: tabular-nums; }
+  tr:last-child td { border-bottom: none; }
+  .vacio { color: var(--tinta-sec); font-size: 15px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Registro de pegadoras</h1>
+  <span id="reloj"></span>
+</header>
+
+<main>
+  <div id="aviso" role="status" aria-live="polite"></div>
+
+  <div class="campo">
+    <label>Máquina</label>
+    <div class="maquinas" id="maquinas">
+      {% for m in maquinas %}
+      <button type="button" data-maquina="{{ m }}" aria-pressed="false">{{ m.split()[-1] }}</button>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="campo">
+    <label for="op">Orden de producción</label>
+    <input id="op" list="ops" inputmode="numeric" autocomplete="off" placeholder="OP-2601">
+    <datalist id="ops"></datalist>
+    <div class="resuelto" id="ref"></div>
+  </div>
+
+  <div class="campo">
+    <label for="operario">Operario</label>
+    <select id="operario"><option value="">Seleccionar</option></select>
+  </div>
+
+  <div class="campo">
+    <label for="evento">Evento</label>
+    <select id="evento"><option value="">Seleccionar</option></select>
+  </div>
+
+  <div class="campo" id="campo-lectura">
+    <label for="lectura">Lectura del contador
+      <span class="pista">— el número que muestra la máquina</span>
+    </label>
+    <input id="lectura" type="number" inputmode="numeric" min="0" placeholder="0">
+    <div class="resuelto" id="calculo"></div>
+  </div>
+
+  <div class="campo">
+    <label for="observaciones">Observaciones <span class="pista">— opcional</span></label>
+    <textarea id="observaciones" rows="2"></textarea>
+  </div>
+
+  <h2>Registros de hoy</h2>
+  <div id="historial" class="vacio">Selecciona máquina y orden.</div>
+</main>
+
+<button id="guardar">Guardar registro</button>
+
+<script>
+const $ = id => document.getElementById(id);
+let maquina = "", acumulado = 0;
+
+function reloj() {
+  $("reloj").textContent = new Date().toLocaleTimeString("es-CO",
+    {hour: "2-digit", minute: "2-digit"});
+}
+reloj(); setInterval(reloj, 10000);
+
+function avisar(texto, tipo) {
+  const a = $("aviso");
+  a.textContent = texto;
+  a.className = tipo;
+  if (tipo === "ok") setTimeout(() => { a.className = ""; }, 6000);
+}
+
+// --- Carga de catálogos ---
+async function cargar() {
+  const [ops, eventos, operarios] = await Promise.all([
+    fetch("/api/ordenes").then(r => r.json()),
+    fetch("/api/eventos").then(r => r.json()),
+    fetch("/api/operarios").then(r => r.json()),
+  ]);
+  $("ops").innerHTML = ops.map(o => `<option value="${o}">`).join("");
+  $("evento").innerHTML += eventos
+    .map(e => `<option value="${e.cod}">${e.cod} · ${e.nombre}</option>`).join("");
+  $("operario").innerHTML += operarios
+    .map(o => `<option value="${o.id}">${o.nombre}</option>`).join("");
+}
+cargar();
+
+// --- Selección de máquina ---
+$("maquinas").addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  [...$("maquinas").children].forEach(x => x.setAttribute("aria-pressed", "false"));
+  b.setAttribute("aria-pressed", "true");
+  maquina = b.dataset.maquina;
+  refrescarHistorial();
+});
+
+// --- Resolución de la orden ---
+$("op").addEventListener("change", async () => {
+  const op = $("op").value.trim();
+  if (!op) { $("ref").textContent = ""; return; }
+  const d = await fetch("/api/orden?op=" + encodeURIComponent(op)).then(r => r.json());
+  $("ref").innerHTML = d.referencia
+    ? `<strong>${d.referencia}</strong> · ${d.cod_referencia}`
+    : `<span style="color:var(--alerta)">Orden no encontrada</span>`;
+  refrescarHistorial();
+});
+
+// Solo los eventos de tiraje producen unidades.
+$("evento").addEventListener("change", () => {
+  const texto = $("evento").selectedOptions[0]?.textContent || "";
+  const esTiraje = texto.toUpperCase().includes("TIRAJE");
+  $("campo-lectura").style.display = esTiraje ? "" : "none";
+  if (!esTiraje) $("lectura").value = "";
+  calcular();
+});
+
+// Muestra la producción resultante antes de guardar. Sin esto, quien digita
+// 12.400 no entiende por qué el historial muestra 800.
+function calcular() {
+  const lectura = parseInt($("lectura").value || "0", 10);
+  if (!lectura) { $("calculo").textContent = ""; return; }
+  const produccion = Math.max(lectura - acumulado, 0);
+  $("calculo").innerHTML = acumulado
+    ? `Producción de esta hora: <strong>${produccion.toLocaleString("es-CO")}</strong>
+       (${lectura.toLocaleString("es-CO")} − ${acumulado.toLocaleString("es-CO")} ya registrado)`
+    : `Primer registro del turno: se guarda <strong>${lectura.toLocaleString("es-CO")}</strong>`;
+}
+$("lectura").addEventListener("input", calcular);
+$("operario").addEventListener("change", refrescarHistorial);
+
+// --- Historial ---
+async function refrescarHistorial() {
+  const op = $("op").value.trim();
+  if (!op || !maquina) return;
+
+  const filas = await fetch(
+    `/api/historial?op=${encodeURIComponent(op)}&maquina=${encodeURIComponent(maquina)}`
+  ).then(r => r.json());
+
+  const operarioId = $("operario").value;
+  acumulado = filas
+    .filter(f => f.evento.toUpperCase().includes("TIRAJE"))
+    .reduce((s, f) => s + f.cantidad, 0);
+  calcular();
+
+  $("historial").className = "";
+  $("historial").innerHTML = filas.length
+    ? `<table><thead><tr><th>Hora</th><th>Evento</th><th>Cant.</th><th>Operario</th></tr></thead>
+       <tbody>${filas.map(f => `<tr>
+         <td>${f.hora}</td><td>${f.evento}</td>
+         <td>${f.cantidad.toLocaleString("es-CO")}</td>
+         <td>${f.operario || ""}</td></tr>`).join("")}</tbody></table>`
+    : `<p class="vacio">Sin registros para esta orden hoy.</p>`;
+}
+
+// --- Guardado ---
+$("guardar").addEventListener("click", async () => {
+  const boton = $("guardar");
+  boton.disabled = true;
+
+  const cuerpo = {
+    maquina,
+    op: $("op").value.trim(),
+    operario_id: $("operario").value,
+    operario_nombre: $("operario").selectedOptions[0]?.textContent || "",
+    cod_evento: $("evento").value,
+    evento: $("evento").selectedOptions[0]?.textContent.split("·")[1]?.trim() || "",
+    cantidad: $("lectura").value || 0,
+    observaciones: $("observaciones").value.trim(),
+  };
+
+  try {
+    const res = await fetch("/api/guardar", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(cuerpo),
+    });
+    const d = await res.json();
+
+    if (!res.ok) {
+      avisar(d.error || "No se pudo guardar", "error");
+    } else {
+      avisar(`Guardado: ${d.produccion.toLocaleString("es-CO")} unidades`, "ok");
+      $("lectura").value = "";
+      $("observaciones").value = "";
+      $("calculo").textContent = "";
+      refrescarHistorial();
+    }
+  } catch (e) {
+    avisar("Sin conexión con el servidor. Verifica la red de planta.", "error");
+  } finally {
+    boton.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
