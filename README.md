@@ -1,5 +1,7 @@
 # Aplicación de captura de datos en planta
 
+![Architecture](docs/architecture.png)
+
 Formulario web para registro de producción por hora en máquinas pegadoras, usado desde el celular por los inspectores en piso. Reemplaza el registro en papel con digitación posterior por captura validada en el momento del evento.
 
 Este repositorio es una **reimplementación demostrativa** de una de tres aplicaciones que desarrollé y opero en producción. El código aquí publicado es original, usa datos sintéticos y no contiene información de la empresa.
