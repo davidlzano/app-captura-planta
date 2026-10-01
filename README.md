@@ -1,122 +1,122 @@
-# Aplicación de captura de datos en planta
+# Shop-Floor Data Capture App
 
 ![Architecture](docs/architecture.png)
 
-Formulario web para registro de producción por hora en máquinas pegadoras, usado desde el celular por los inspectores en piso. Reemplaza el registro en papel con digitación posterior por captura validada en el momento del evento.
+Web form for hourly production logging on gluing machines, used from a phone by the floor inspectors. It replaces paper logging followed by later keying-in with validated capture at the moment of the event.
 
-Este repositorio es una **reimplementación demostrativa** de una de tres aplicaciones que desarrollé y opero en producción. El código aquí publicado es original, usa datos sintéticos y no contiene información de la empresa.
+This repository is a **demo reimplementation** of one of three applications I developed and run in production. The code published here is original, uses synthetic data, and contains no company information.
 
 ---
 
-## El problema
+## The problem
 
-El registro de producción se hacía en papel durante el turno y alguien lo digitaba después. Eso genera tres problemas encadenados:
+Production was logged on paper during the shift and someone keyed it in afterwards. That creates three chained problems:
 
-- **Doble trabajo**: se escribe una vez a mano y otra en el computador.
-- **Latencia**: entre que algo pasa en planta y que el dato existe pasan horas o días.
-- **Errores sin corrección posible**: cuando el digitador encuentra una inconsistencia, el turno ya terminó y no hay a quién preguntarle.
+- **Double work**: it is written once by hand and again on the computer.
+- **Latency**: hours or days pass between something happening on the floor and the data existing.
+- **Errors that cannot be corrected**: when the person keying in finds an inconsistency, the shift is over and there is nobody to ask.
 
-Capturar en origen resuelve los tres. Pero introduce uno nuevo: el formulario tiene que funcionar en un celular, en planta, posiblemente con guantes, por alguien que tiene otras cosas que hacer.
+Capturing at the source solves all three. But it introduces a new one: the form has to work on a phone, on the factory floor, possibly with gloves on, for someone who has other things to do.
 
-## La decisión de diseño central
+## The central design decision
 
-**El operario digita la lectura del contador de la máquina, no la producción de la hora.**
+**The operator enters the machine's counter reading, not the hour's production.**
 
-Parece un detalle y no lo es. Pedirle a alguien que reste mentalmente la lectura anterior cada hora, en planta y con prisa, es exactamente donde se cuelan los errores. Copiar un número de una pantalla no lo es.
+It looks like a detail and it is not. Asking someone to mentally subtract the previous reading every hour, on the floor and in a hurry, is exactly where errors creep in. Copying a number from a screen is not.
 
-El sistema calcula la producción restando lo ya registrado por ese operario, en esa orden y esa máquina, durante el día:
+The system calculates production by subtracting what that operator has already logged, on that order and that machine, during the day:
 
 ```
-lectura del contador  8.200
-ya registrado         5.000
-                    ────────
-producción de la hora 3.200
+counter reading        8,200
+already logged         5,000
+                     ────────
+hour's production      3,200
 ```
 
-Al cambiar de operario, de orden o de turno el acumulado vuelve a cero, así que el siguiente registro se convierte en base nueva sin que nadie tenga que indicarlo.
+When the operator, the order or the shift changes, the accumulated total resets to zero, so the next entry becomes a new baseline without anyone having to say so.
 
-El formulario muestra el cálculo **antes** de guardar. Sin eso, quien digita 12.400 no entiende por qué el historial muestra 800, y la desconfianza en el sistema es más costosa que cualquier error de digitación.
-
----
-
-## Decisiones técnicas
-
-**El lock de escritura no es decorativo.** Leer el acumulado y escribir el registro tienen que ser una sola operación atómica. Si dos inspectores guardan al mismo tiempo sobre la misma orden, ambos leerían el mismo acumulado y el segundo calcularía mal su producción.
-
-**Los catálogos se recargan solos.** Un hilo demonio refresca órdenes, eventos y operarios cada hora. Cuando el ERP crea una orden nueva, aparece en el formulario sin reiniciar el servicio y sin que nadie tenga que entrar al servidor.
-
-**Si la base falla, la app sigue sirviendo.** La recarga conserva los datos que ya estaban en memoria en lugar de vaciarlos. Una app de planta sin catálogos deja de funcionar por completo; una que trabaja con datos de hace una hora sigue siendo útil.
-
-**Cabeceras anti-caché.** Esto dejó de ser teórico en producción: tras actualizar el formulario, los dispositivos seguían mostrando la versión anterior durante horas.
-
-**El servidor no confía en el formulario.** El formulario valida por comodidad del usuario; el servidor valida porque es la única garantía real. Se verifica que la orden exista y esté activa, que la máquina sea válida y que los campos obligatorios vengan completos.
-
-**Endpoints de diagnóstico.** `/api/estado` reporta cuándo se cargaron los catálogos y cuántos registros hay; `/api/recargar` fuerza un refresco. Permiten verificar el servicio sin entrar al servidor, que en planta es la diferencia entre resolver algo en un minuto o en media hora.
+The form shows the calculation **before** saving. Without that, someone who enters 12,400 does not understand why the history shows 800, and distrust of the system is costlier than any keying error.
 
 ---
 
-## Diseño de la interfaz
+## Technical decisions
 
-El contexto de uso manda sobre cualquier preferencia estética:
+**The write lock is not decorative.** Reading the accumulated total and writing the record have to be a single atomic operation. If two inspectors save at the same time on the same order, both would read the same total and the second would miscalculate their production.
 
-- Objetivos táctiles de 56px mínimo, porque se opera con guantes
-- Contraste alto, porque la luz de planta es irregular
-- La lectura del contador en tipografía grande y tabular, para que un error de digitación se note antes de guardar
-- El campo de cantidad desaparece cuando el evento no es de tiraje, porque un paro no produce unidades
-- Los avisos dicen qué pasó y qué hacer, no piden disculpas
+**Catalogs reload on their own.** A daemon thread refreshes orders, events and operators every hour. When the ERP creates a new order, it shows up in the form without restarting the service and without anyone having to log into the server.
+
+**If the database fails, the app keeps serving.** The reload keeps the data already in memory instead of emptying it. A floor app without catalogs stops working entirely; one working with data from an hour ago is still useful.
+
+**Anti-cache headers.** This stopped being theoretical in production: after updating the form, devices kept showing the previous version for hours.
+
+**The server does not trust the form.** The form validates for the user's convenience; the server validates because it is the only real guarantee. It checks that the order exists and is active, that the machine is valid, and that the required fields are complete.
+
+**Diagnostic endpoints.** `/api/estado` reports when the catalogs were loaded and how many records there are; `/api/recargar` forces a refresh. They let you verify the service without logging into the server, which on the floor is the difference between fixing something in a minute or in half an hour.
 
 ---
 
-## Ejecución
+## Interface design
 
-Requiere Python 3.10 o superior.
+The context of use outranks any aesthetic preference:
+
+- Touch targets of at least 56px, because it is operated with gloves
+- High contrast, because floor lighting is uneven
+- The counter reading in large, tabular type, so that a keying error is noticed before saving
+- The quantity field disappears when the event is not a production run, because a stoppage produces no units
+- Messages say what happened and what to do, they do not apologize
+
+---
+
+## Running it
+
+Requires Python 3.10 or higher.
 
 ```bash
 pip install -r requirements.txt
 
-python datos_demo.py   # crea planta.db con catálogos de ejemplo
-python app.py          # servidor en http://localhost:5000
+python datos_demo.py   # creates planta.db with example catalogs
+python app.py          # server at http://localhost:5000
 ```
 
-Para probarlo desde el celular, con ambos dispositivos en la misma red, se entra a `http://<ip-del-equipo>:5000`.
+To try it from a phone, with both devices on the same network, go to `http://<computer-ip>:5000`.
 
-Flujo de prueba: selecciona una máquina, escribe una orden del catálogo (`OP-2601` en adelante), elige operario y evento de tiraje, y digita una lectura. Guarda, y luego digita una lectura mayor: el segundo registro mostrará solo la diferencia.
+Test flow: select a machine, type an order from the catalog (`OP-2601` onward), choose an operator and a production-run event, and enter a reading. Save, then enter a higher reading: the second record will show only the difference.
 
 ---
 
-## Estructura
+## Structure
 
-| Archivo | Contenido |
+| File | Contents |
 |---|---|
-| `app.py` | Rutas, validación de servidor, cabeceras anti-caché |
-| `data_manager.py` | Catálogos en memoria, recarga en caliente, cálculo de producción |
-| `datos_demo.py` | Genera la base con catálogos de ejemplo |
-| `templates/form.html` | Formulario móvil |
+| `app.py` | Routes, server validation, anti-cache headers |
+| `data_manager.py` | In-memory catalogs, hot reload, production calculation |
+| `datos_demo.py` | Generates the database with example catalogs |
+| `templates/form.html` | Mobile form |
 
 ---
 
-## Diferencias con la versión en producción
+## Differences from the production version
 
-| | Aquí | Producción |
+| | Here | Production |
 |---|---|---|
-| Órdenes | SQLite local | SQL Server, alimentado por el pipeline del ERP |
-| Eventos y operarios | SQLite local | maestras en Excel mantenidas por calidad |
-| Destino | SQLite | consolidado en Excel sobre carpeta de red |
-| Autenticación | selector de operario | validación por cédula contra la maestra |
-| Despliegue | manual | servicio en equipo de planta, arranque automático |
+| Orders | Local SQLite | SQL Server, fed by the ERP pipeline |
+| Events and operators | Local SQLite | Excel master files maintained by quality |
+| Destination | SQLite | Consolidated in Excel on a network folder |
+| Authentication | operator selector | validation by national ID number against the master file |
+| Deployment | manual | service on a floor computer, automatic start |
 
-Es una de tres aplicaciones hermanas con la misma arquitectura, cada una para un proceso distinto de la planta.
-
----
-
-## Posibles extensiones
-
-- Cola local para registrar sin conexión y sincronizar al recuperar la red
-- Alerta cuando una lectura es menor que el acumulado, que indica cambio de contador o error de digitación
-- Cierre de turno con resumen por operario
+It is one of three sibling applications with the same architecture, each for a different plant process.
 
 ---
 
-## Licencia
+## Possible extensions
+
+- Local queue to log offline and sync when the network returns
+- Alert when a reading is lower than the accumulated total, which indicates a counter change or a keying error
+- Shift close-out with a per-operator summary
+
+---
+
+## License
 
 MIT
